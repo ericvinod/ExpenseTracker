@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloud Expense Tracker (Supabase)</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Supabase JS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    .modal-backdrop {
+      background-color: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col antialiased selection:bg-indigo-100 selection:text-indigo-800">
+
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-emerald-500 flex items-center justify-center text-white shadow-sm shadow-indigo-100">
+          <i data-lucide="wallet-cards" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900 tracking-tight leading-tight">ExpenseTrack</h1>
+          <p class="text-xs text-slate-500 font-medium font-mono truncate max-w-[200px] sm:max-w-xs">dlwimgoimwfuqoxyvewq.supabase.co</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-2 sm:space-x-3">
+        <!-- Live Status Indicator -->
+        <div id="connectionStatusBadge" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span id="connectionStatusText">Supabase Connected</span>
+        </div>
+
+        <!-- SQL Schema Guide Trigger -->
+        <button onclick="openSqlModal()" class="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition" title="View SQL table schema">
+          <i data-lucide="database" class="w-3.5 h-3.5 text-slate-600"></i>
+          <span class="hidden sm:inline">Database Schema</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    
+    <!-- Table Missing Warning Banner -->
+    <div id="tableMissingBanner" class="hidden bg-amber-50 border border-amber-300 rounded-2xl p-4 sm:p-5 shadow-xs transition duration-200">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex items-start space-x-3">
+          <div class="p-2 bg-amber-100 text-amber-700 rounded-xl mt-0.5 shrink-0">
+            <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-amber-900">Table 'expenses' Not Found in Supabase</h3>
+            <p class="text-xs text-amber-800 mt-1 max-w-2xl leading-relaxed">
+              Your Supabase credentials are connected, but the <code>expenses</code> table does not exist yet or has missing permissions. Click below to copy the SQL script to create it in your Supabase SQL Editor in 10 seconds.
+            </p>
+          </div>
+        </div>
+        <button onclick="openSqlModal()" class="inline-flex items-center justify-center space-x-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-4 py-2.5 rounded-xl shadow-xs shrink-0 transition">
+          <i data-lucide="terminal" class="w-4 h-4"></i>
+          <span>View SQL Setup</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Spent</p>
+          <h3 id="statTotal" class="text-2xl font-bold text-slate-900 mt-1">₹0.00</h3>
+          <p id="statCount" class="text-xs text-slate-500 mt-0.5">0 entries recorded</p>
+        </div>
+        <div class="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600">
+          <i data-lucide="receipt" class="w-6 h-6"></i>
+        </div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-emerald-600">Cash / GPAY</p>
+          <h3 id="statCashGpay" class="text-2xl font-bold text-slate-900 mt-1">₹0.00</h3>
+          <span class="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full inline-block mt-1">Direct Payments</span>
+        </div>
+        <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <i data-lucide="banknote" class="w-6 h-6"></i>
+        </div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-indigo-600">Credit Card</p>
+          <h3 id="statCreditCard" class="text-2xl font-bold text-slate-900 mt-1">₹0.00</h3>
+          <span class="text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full inline-block mt-1">Card Spend</span>
+        </div>
+        <div class="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <i data-lucide="credit-card" class="w-6 h-6"></i>
+        </div>
+      </div>
+
+      <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-amber-600">Top Category</p>
+          <h3 id="statTopCategory" class="text-lg font-bold text-slate-900 mt-1 truncate max-w-[140px]">None</h3>
+          <p id="statTopCategoryAmount" class="text-xs text-slate-500 mt-0.5">₹0.00</p>
+        </div>
+        <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+          <i data-lucide="pie-chart" class="w-6 h-6"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      
+      <!-- Input Expense Form -->
+      <section class="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-xs">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="plus-circle" class="w-5 h-5 text-indigo-600"></i>
+            <h2 class="text-base font-bold text-slate-900">Add New Expense</h2>
+          </div>
+          <span class="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">Supabase Live</span>
+        </div>
+
+        <form id="expenseForm" onsubmit="handleFormSubmit(event)" class="space-y-4">
+          <!-- Description -->
+          <div>
+            <label for="description" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1">
+              Expense Description <span class="text-rose-500">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="description" 
+              required 
+              placeholder="e.g. Monthly Broadband, Dairy farm delivery" 
+              class="w-full text-sm px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition placeholder:text-slate-400"
+            />
+          </div>
+
+          <!-- Category -->
+          <div>
+            <label for="category" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1">
+              Category <span class="text-rose-500">*</span>
+            </label>
+            <select 
+              id="category" 
+              required 
+              class="w-full text-sm px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition text-slate-800"
+            >
+              <option value="" disabled selected>Select a category...</option>
+              <option value="Parents Maintenance">Parents Maintenance</option>
+              <option value="Home Maintenance">Home Maintenance</option>
+              <option value="Home Loan">Home Loan</option>
+              <option value="Milk">Milk</option>
+              <option value="Non-veg">Non-veg</option>
+              <option value="Rachael">Rachael</option>
+              <option value="Petrol">Petrol</option>
+              <option value="Vegetable">Vegetable</option>
+              <option value="Groceries">Groceries</option>
+              <option value="Mobile">Mobile</option>
+              <option value="WiFi">WiFi</option>
+            </select>
+          </div>
+
+          <!-- Paid By & Amount Row -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <!-- Paid By -->
+            <div>
+              <label for="paidBy" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1">
+                Paid By <span class="text-rose-500">*</span>
+              </label>
+              <select 
+                id="paidBy" 
+                required 
+                class="w-full text-sm px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition text-slate-800"
+              >
+                <option value="CashGPAY">CashGPAY</option>
+                <option value="Credit Card">Credit Card</option>
+              </select>
+            </div>
+
+            <!-- Amount -->
+            <div>
+              <label for="amount" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1">
+                Amount (₹) <span class="text-rose-500">*</span>
+              </label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 text-sm font-semibold">₹</span>
+                <input 
+                  type="number" 
+                  id="amount" 
+                  step="0.01" 
+                  min="0.01" 
+                  required 
+                  placeholder="0.00" 
+                  class="w-full text-sm pl-7 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition font-mono placeholder:text-slate-400"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div>
+            <label for="notes" class="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1">
+              Notes <span class="text-slate-400 font-normal">(Optional)</span>
+            </label>
+            <textarea 
+              id="notes" 
+              rows="3" 
+              placeholder="Any additional remarks, transaction ID, invoice notes..."
+              class="w-full text-sm px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition placeholder:text-slate-400 resize-none"
+            ></textarea>
+          </div>
+
+          <!-- Submit Button -->
+          <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold rounded-xl transition flex items-center justify-center space-x-2 shadow-sm shadow-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          >
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>Save to Supabase</span>
+          </button>
+        </form>
+      </section>
+
+      <section class="lg:col-span-8 bg-white rounded-2xl border border-slate-200/90 shadow-xs flex flex-col overflow-hidden">
+        
+        <!-- Controls & Filters Bar -->
+        <div class="p-5 border-b border-slate-100 flex flex-col gap-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 class="text-base font-bold text-slate-900">Expense History</h2>
+              <p class="text-xs text-slate-500">Live entries synced from Supabase PostgreSQL</p>
+            </div>
+            
+            <div class="flex items-center space-x-2">
+              <button onclick="fetchExpenses()" title="Refresh entries" class="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg border border-slate-200 transition">
+                <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+              </button>
+              <button onclick="exportToCSV()" class="flex items-center space-x-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-2xs transition">
+                <i data-lucide="download" class="w-3.5 h-3.5 text-slate-600"></i>
+                <span>Export CSV</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Filters Row -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <!-- Search -->
+            <div class="relative">
+              <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
+              <input 
+                type="text" 
+                id="searchFilter" 
+                placeholder="Search description/notes..." 
+                oninput="applyFilters()"
+                class="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition placeholder:text-slate-400"
+              />
+            </div>
+
+            <!-- Filter Category -->
+            <div>
+              <select 
+                id="categoryFilter" 
+                onchange="applyFilters()" 
+                class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition text-slate-700"
+              >
+                <option value="">All Categories</option>
+                <option value="Parents Maintenance">Parents Maintenance</option>
+                <option value="Home Maintenance">Home Maintenance</option>
+                <option value="Home Loan">Home Loan</option>
+                <option value="Milk">Milk</option>
+                <option value="Non-veg">Non-veg</option>
+                <option value="Rachael">Rachael</option>
+                <option value="Petrol">Petrol</option>
+                <option value="Vegetable">Vegetable</option>
+                <option value="Groceries">Groceries</option>
+                <option value="Mobile">Mobile</option>
+                <option value="WiFi">WiFi</option>
+              </select>
+            </div>
+
+            <!-- Filter Paid By -->
+            <div>
+              <select 
+                id="paidByFilter" 
+                onchange="applyFilters()" 
+                class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition text-slate-700"
+              >
+                <option value="">All Payment Methods</option>
+                <option value="CashGPAY">CashGPAY</option>
+                <option value="Credit Card">Credit Card</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="overflow-x-auto min-h-[350px]">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50/75 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <th class="py-3 px-4">Date</th>
+                <th class="py-3 px-4">Description</th>
+                <th class="py-3 px-4">Category</th>
+                <th class="py-3 px-4">Paid By</th>
+                <th class="py-3 px-4 text-right">Amount</th>
+                <th class="py-3 px-4 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="expenseTableBody" class="divide-y divide-slate-100 text-sm">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+
+          <!-- Empty State Container -->
+          <div id="emptyState" class="hidden flex-col items-center justify-center py-16 px-4 text-center">
+            <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
+              <i data-lucide="inbox" class="w-6 h-6"></i>
+            </div>
+            <h4 class="text-sm font-semibold text-slate-800">No expenses found</h4>
+            <p class="text-xs text-slate-500 mt-1 max-w-sm">No recorded transactions match your filters or your database table is currently empty.</p>
+          </div>
+
+          <!-- Loading State Indicator -->
+          <div id="loadingState" class="flex flex-col items-center justify-center py-16 px-4 text-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent mb-3"></div>
+            <p class="text-xs font-medium text-slate-500">Connecting to Supabase...</p>
+          </div>
+        </div>
+
+        <!-- Table Footer Info -->
+        <div class="p-3.5 bg-slate-50/50 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+          <span id="filteredCountText">Showing 0 entries</span>
+          <span id="storageModeIndicator" class="font-medium text-emerald-700">Connected: Supabase cloud DB</span>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <div id="sqlModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop hidden">
+    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div class="flex items-center space-x-2">
+          <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <i data-lucide="database" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Supabase Table Setup (expenses)</h3>
+            <p class="text-xs text-slate-500">Run this SQL in your Supabase SQL Editor if the table isn't created yet</p>
+          </div>
+        </div>
+        <button onclick="closeSqlModal()" class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 overflow-y-auto space-y-4 text-sm">
+        <p class="text-xs text-slate-600 leading-relaxed">
+          If you encounter a <code>relation "public.expenses" does not exist</code> error, simply paste and run this SQL query directly in your 
+          <a href="https://supabase.com/dashboard/project/dlwimgoimwfuqoxyvewq/sql" target="_blank" class="text-indigo-600 font-semibold underline">
+            Supabase Project SQL Editor
+          </a>:
+        </p>
+
+        <div class="relative">
+          <pre id="sqlSnippet" class="p-4 bg-slate-900 text-emerald-400 text-xs rounded-xl overflow-x-auto font-mono select-all leading-relaxed">
+CREATE TABLE IF NOT EXISTS public.expenses (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+  description TEXT NOT NULL,
+  category TEXT NOT NULL,
+  paid_by TEXT NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL,
+  notes TEXT
+);
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read access
+CREATE POLICY "Allow public read"
+ON public.expenses
+FOR SELECT
+TO anon
+USING (true);
+
+-- Allow public insert access
+CREATE POLICY "Allow public insert"
+ON public.expenses
+FOR INSERT
+TO anon
+WITH CHECK (true);
+
+-- Allow public delete access
+CREATE POLICY "Allow public delete"
+ON public.expenses
+FOR DELETE
+TO anon
+USING (true);</pre>
+          <button 
+            onclick="copySqlCode()" 
+            class="absolute top-2.5 right-2.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium border border-slate-700 flex items-center space-x-1.5 transition"
+          >
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            <span id="copySqlBtnText">Copy SQL</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+        <button onclick="closeSqlModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl text-xs transition">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+
+  <script>
+    // Hardcoded Supabase Configuration provided by user
+    const SUPABASE_URL = "https://dlwimgoimwfuqoxyvewq.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsd2ltZ29pbXdmdXFveHl2ZXdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5MTE4NzYsImV4cCI6MjEwNTQ4Nzg3Nn0.u4D0j10SGqe2WWU9O0bQzR2nLUE3t-o1VHKrdAv3KrI";
+
+    // Global application variables
+    let supabaseClient = null;
+    let allExpenses = [];
+
+    // Category styling badges
+    const CATEGORY_COLORS = {
+      'Parents Maintenance': 'bg-purple-100 text-purple-800 border-purple-200',
+      'Home Maintenance': 'bg-blue-100 text-blue-800 border-blue-200',
+      'Home Loan': 'bg-rose-100 text-rose-800 border-rose-200',
+      'Milk': 'bg-amber-100 text-amber-800 border-amber-200',
+      'Non-veg': 'bg-red-100 text-red-800 border-red-200',
+      'Rachael': 'bg-pink-100 text-pink-800 border-pink-200',
+      'Petrol': 'bg-orange-100 text-orange-800 border-orange-200',
+      'Vegetable': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      'Groceries': 'bg-teal-100 text-teal-800 border-teal-200',
+      'Mobile': 'bg-sky-100 text-sky-800 border-sky-200',
+      'WiFi': 'bg-indigo-100 text-indigo-800 border-indigo-200'
+    };
+
+    // Auto-initialize client on document load
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initSupabase();
+    });
+
+    function initSupabase() {
+      try {
+        if (!window.supabase) {
+          throw new Error("Supabase library script failed to load from CDN.");
+        }
+        // Initialize client with hardcoded credentials
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        fetchExpenses();
+      } catch (err) {
+        console.error("Initialization error:", err);
+        showToast("Error initializing Supabase: " + err.message, "error");
+      }
+    }
+
+    async function fetchExpenses() {
+      const loadingState = document.getElementById('loadingState');
+      const emptyState = document.getElementById('emptyState');
+      const banner = document.getElementById('tableMissingBanner');
+
+      loadingState.classList.remove('hidden');
+      emptyState.classList.add('hidden');
+
+      try {
+        const { data, error } = await supabaseClient
+          .from('expenses')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          // If table does not exist yet (PostgreSQL 42P01 error or similar)
+          if (error.code === '42P01' || error.message?.includes('relation "public.expenses" does not exist')) {
+            banner.classList.remove('hidden');
+            showToast("Table 'expenses' not created in Supabase yet. Open SQL Setup to configure.", "error");
+          } else {
+            showToast("Database fetch notice: " + error.message, "error");
+          }
+          throw error;
+        }
+
+        // Table exists and query succeeded
+        banner.classList.add('hidden');
+        allExpenses = data || [];
+        applyFilters();
+        updateDashboardMetrics();
+      } catch (err) {
+        console.warn("Could not query Supabase expenses:", err);
+      } finally {
+        loadingState.classList.add('hidden');
+      }
+    }
+
+    async function handleFormSubmit(event) {
+      event.preventDefault();
+
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = true;
+      submitBtn.classList.add('opacity-70');
+
+      const desc = document.getElementById('description').value.trim();
+      const cat = document.getElementById('category').value;
+      const paidBy = document.getElementById('paidBy').value;
+      const amount = parseFloat(document.getElementById('amount').value);
+      const notes = document.getElementById('notes').value.trim();
+
+      if (!desc || !cat || !paidBy || isNaN(amount) || amount <= 0) {
+        showToast("Please fill in all required fields properly.", "error");
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-70');
+        return;
+      }
+
+      const newExpense = {
+        description: desc,
+        category: cat,
+        paid_by: paidBy,
+        amount: amount,
+        notes: notes || null
+      };
+
+      try {
+        const { data, error } = await supabaseClient
+          .from('expenses')
+          .insert([newExpense])
+          .select();
+
+        if (error) {
+          if (error.code === '42P01' || error.message?.includes('relation "public.expenses" does not exist')) {
+            document.getElementById('tableMissingBanner').classList.remove('hidden');
+            openSqlModal();
+          }
+          throw error;
+        }
+
+        showToast("Expense inserted into Supabase successfully!", "success");
+        document.getElementById('expenseForm').reset();
+        await fetchExpenses();
+
+      } catch (err) {
+        console.error("Supabase insert error:", err);
+        showToast("Error inserting expense: " + (err.message || 'Check database table and RLS policies'), "error");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-70');
+      }
+    }
+
+    async function deleteExpense(id) {
+      try {
+        const { error } = await supabaseClient
+          .from('expenses')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+        showToast("Expense deleted from Supabase.", "info");
+        await fetchExpenses();
+      } catch (err) {
+        console.error("Supabase delete error:", err);
+        showToast("Failed to delete: " + err.message, "error");
+      }
+    }
+
+    function applyFilters() {
+      const searchVal = document.getElementById('searchFilter').value.toLowerCase().trim();
+      const catVal = document.getElementById('categoryFilter').value;
+      const paidByVal = document.getElementById('paidByFilter').value;
+
+      const filtered = allExpenses.filter(item => {
+        const matchesCategory = !catVal || item.category === catVal;
+        const matchesPaidBy = !paidByVal || item.paid_by === paidByVal;
+        
+        const descMatch = (item.description || '').toLowerCase().includes(searchVal);
+        const notesMatch = (item.notes || '').toLowerCase().includes(searchVal);
+        const matchesSearch = !searchVal || (descMatch || notesMatch);
+
+        return matchesCategory && matchesPaidBy && matchesSearch;
+      });
+
+      renderTable(filtered);
+      document.getElementById('filteredCountText').textContent = `Showing ${filtered.length} of ${allExpenses.length} entries`;
+    }
+
+    function renderTable(items) {
+      const tbody = document.getElementById('expenseTableBody');
+      const emptyState = document.getElementById('emptyState');
+      tbody.innerHTML = '';
+
+      if (items.length === 0) {
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+
+      items.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50/80 transition group";
+
+        const formattedDate = formatDate(item.created_at);
+        const badgeColor = CATEGORY_COLORS[item.category] || 'bg-slate-100 text-slate-700 border-slate-200';
+        const paidByBadge = item.paid_by === 'Credit Card' 
+          ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
+          : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+
+        tr.innerHTML = `
+          <td class="py-3 px-4 text-xs text-slate-500 whitespace-nowrap">${formattedDate}</td>
+          <td class="py-3 px-4 font-medium text-slate-800">
+            <div class="font-semibold text-slate-900">${escapeHTML(item.description)}</div>
+            ${item.notes ? `<div class="text-xs text-slate-500 line-clamp-1 italic mt-0.5">"${escapeHTML(item.notes)}"</div>` : ''}
+          </td>
+          <td class="py-3 px-4 whitespace-nowrap">
+            <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-lg border ${badgeColor}">
+              ${escapeHTML(item.category)}
+            </span>
+          </td>
+          <td class="py-3 px-4 whitespace-nowrap">
+            <span class="inline-flex items-center space-x-1 px-2.5 py-0.5 text-xs font-medium rounded-full border ${paidByBadge}">
+              <span>${escapeHTML(item.paid_by)}</span>
+            </span>
+          </td>
+          <td class="py-3 px-4 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+            ₹${formatCurrency(item.amount)}
+          </td>
+          <td class="py-3 px-4 text-center whitespace-nowrap">
+            <button onclick="deleteExpense('${item.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition" title="Delete record">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      lucide.createIcons();
+    }
+
+    function updateDashboardMetrics() {
+      let total = 0;
+      let cashGpay = 0;
+      let creditCard = 0;
+      const categoryCounts = {};
+
+      allExpenses.forEach(exp => {
+        const val = Number(exp.amount) || 0;
+        total += val;
+
+        if (exp.paid_by === 'CashGPAY') {
+          cashGpay += val;
+        } else if (exp.paid_by === 'Credit Card') {
+          creditCard += val;
+        }
+
+        categoryCounts[exp.category] = (categoryCounts[exp.category] || 0) + val;
+      });
+
+      // Top category by spending
+      let topCategory = 'None';
+      let topCategoryAmount = 0;
+      for (const [cat, amt] of Object.entries(categoryCounts)) {
+        if (amt > topCategoryAmount) {
+          topCategory = cat;
+          topCategoryAmount = amt;
+        }
+      }
+
+      document.getElementById('statTotal').textContent = `₹${formatCurrency(total)}`;
+      document.getElementById('statCount').textContent = `${allExpenses.length} entries recorded`;
+      document.getElementById('statCashGpay').textContent = `₹${formatCurrency(cashGpay)}`;
+      document.getElementById('statCreditCard').textContent = `₹${formatCurrency(creditCard)}`;
+      document.getElementById('statTopCategory').textContent = topCategory;
+      document.getElementById('statTopCategoryAmount').textContent = `₹${formatCurrency(topCategoryAmount)}`;
+    }
+
+    function exportToCSV() {
+      if (!allExpenses || allExpenses.length === 0) {
+        showToast("No data available to export.", "error");
+        return;
+      }
+
+      const headers = ["ID", "Created At", "Description", "Category", "Paid By", "Amount (INR)", "Notes"];
+      const rows = allExpenses.map(item => [
+        `"${item.id}"`,
+        `"${item.created_at}"`,
+        `"${(item.description || '').replace(/"/g, '""')}"`,
+        `"${(item.category || '').replace(/"/g, '""')}"`,
+        `"${(item.paid_by || '').replace(/"/g, '""')}"`,
+        item.amount,
+        `"${(item.notes || '').replace(/"/g, '""')}"`
+      ]);
+
+      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `supabase_expenses_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToast("CSV export downloaded successfully!", "success");
+    }
+
+    function openSqlModal() {
+      document.getElementById('sqlModal').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeSqlModal() {
+      document.getElementById('sqlModal').classList.add('hidden');
+    }
+
+    function copySqlCode() {
+      const code = document.getElementById('sqlSnippet').innerText;
+      const el = document.createElement('textarea');
+      el.value = code;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+
+      const btnText = document.getElementById('copySqlBtnText');
+      btnText.textContent = "Copied!";
+      setTimeout(() => {
+        btnText.textContent = "Copy SQL";
+      }, 2000);
+      showToast("SQL table schema copied to clipboard!", "success");
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      
+      const colors = {
+        success: 'bg-emerald-800 text-white border-emerald-700',
+        error: 'bg-rose-800 text-white border-rose-700',
+        info: 'bg-slate-900 text-white border-slate-800'
+      };
+
+      const iconName = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info';
+      toast.className = `flex items-center space-x-2 px-4 py-3 rounded-xl shadow-xl text-xs font-medium border ${colors[type] || colors.info} transform transition-all duration-300 translate-y-4 opacity-0 pointer-events-auto`;
+      toast.innerHTML = `<i data-lucide="${iconName}" class="w-4 h-4 shrink-0"></i><span>${escapeHTML(message)}</span>`;
+      
+      container.appendChild(toast);
+      lucide.createIcons();
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return '-';
+      try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('en-IN', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+      } catch {
+        return dateStr;
+      }
+    }
+
+    function formatCurrency(val) {
+      const num = Number(val) || 0;
+      return num.toLocaleString('en-IN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function escapeHTML(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
