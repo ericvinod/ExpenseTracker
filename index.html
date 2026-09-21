@@ -360,23 +360,32 @@
 
   <!-- Document & Image Lightbox Modal -->
   <div id="documentModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-xs hidden items-center justify-center z-50 p-4 transition-all">
-    <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden fade-in">
-      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-        <div class="flex items-center space-x-2">
-          <i data-lucide="receipt" class="w-4 h-4 text-emerald-600"></i>
-          <h3 class="text-sm font-bold text-slate-900" id="docModalTitle">Attached Bill / Receipt</h3>
+    <div class="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden fade-in">
+      <div class="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div class="flex items-center space-x-2.5 overflow-hidden pr-2">
+          <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+            <i data-lucide="receipt" class="w-4 h-4" id="modalHeaderIcon"></i>
+          </div>
+          <div class="overflow-hidden">
+            <h3 class="text-sm font-bold text-slate-900 truncate" id="docModalTitle">Attached Bill / Receipt</h3>
+            <p class="text-[11px] text-slate-400 truncate" id="docModalSubtitle">Document viewer</p>
+          </div>
         </div>
-        <div class="flex items-center gap-2">
-          <a id="docDownloadBtn" download="receipt" href="#" target="_blank" class="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
-            <i data-lucide="download" class="w-4 h-4"></i>
-            <span class="text-xs hidden sm:inline">Open / Download</span>
+        <div class="flex items-center gap-2 shrink-0">
+          <button id="docOpenTabBtn" type="button" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5">
+            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Open in Tab</span>
+          </button>
+          <a id="docDownloadBtn" download="receipt" href="#" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-xs">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Download</span>
           </a>
-          <button id="closeDocModalBtn" class="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors">
-            <i data-lucide="x" class="w-4 h-4"></i>
+          <button id="closeDocModalBtn" class="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors ml-1">
+            <i data-lucide="x" class="w-5 h-5"></i>
           </button>
         </div>
       </div>
-      <div class="p-4 flex-1 overflow-auto flex items-center justify-center bg-slate-100/50 min-h-[300px]" id="docModalContent">
+      <div class="p-4 flex-1 overflow-auto flex items-center justify-center bg-slate-900/5 min-h-[420px]" id="docModalContent">
         <!-- Dynamic content: img or iframe for pdf -->
       </div>
     </div>
@@ -445,13 +454,41 @@
 
     const documentModal = document.getElementById('documentModal');
     const docModalTitle = document.getElementById('docModalTitle');
+    const docModalSubtitle = document.getElementById('docModalSubtitle');
     const docModalContent = document.getElementById('docModalContent');
     const docDownloadBtn = document.getElementById('docDownloadBtn');
+    const docOpenTabBtn = document.getElementById('docOpenTabBtn');
     const closeDocModalBtn = document.getElementById('closeDocModalBtn');
+    const modalHeaderIcon = document.getElementById('modalHeaderIcon');
+
+    let activeBlobUrl = null;
 
     function refreshLucide() {
       if (window.lucide && typeof window.lucide.createIcons === 'function') {
         window.lucide.createIcons();
+      }
+    }
+
+    // Helper to safely convert base64 Data-URI to a Blob URL for reliable browser iframe & new tab viewing
+    function dataUriToBlobUrl(dataUri) {
+      if (!dataUri || typeof dataUri !== 'string') return null;
+      if (!dataUri.startsWith('data:')) return dataUri; // already regular URL
+
+      try {
+        const parts = dataUri.split(',');
+        const mimeMatch = parts[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+        const byteString = atob(parts[1]);
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mime });
+        return URL.createObjectURL(blob);
+      } catch (err) {
+        console.warn("Blob conversion fallback:", err);
+        return dataUri;
       }
     }
 
@@ -646,36 +683,40 @@
         // Attachment visual element
         let attachmentHtml = `<span class="text-slate-400 text-xs">-</span>`;
         if (item.attachment && (typeof item.attachment === 'object' || typeof item.attachment === 'string')) {
-          const att = typeof item.attachment === 'string' && item.attachment.startsWith('{')
-            ? JSON.parse(item.attachment)
-            : item.attachment;
+          let att = item.attachment;
+          if (typeof att === 'string' && att.startsWith('{')) {
+            try { att = JSON.parse(att); } catch(e) {}
+          }
           
           const isStringUrl = typeof att === 'string';
           const isPdf = isStringUrl 
-            ? att.includes('.pdf') 
+            ? att.toLowerCase().includes('.pdf') || att.startsWith('data:application/pdf')
             : (att.type?.includes('pdf') || att.name?.toLowerCase().endsWith('.pdf'));
           
           if (isPdf) {
             attachmentHtml = `
               <button 
+                type="button"
                 onclick="viewAttachment('${item.id}')"
-                class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 rounded-lg text-xs font-medium transition-colors"
-                title="View PDF bill"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-300 border border-red-200 rounded-lg text-xs font-semibold transition-all shadow-xs"
+                title="Click to view PDF bill"
               >
-                <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
-                <span>PDF Bill</span>
+                <i data-lucide="file-text" class="w-3.5 h-3.5 text-red-600"></i>
+                <span>View PDF</span>
               </button>
             `;
           } else {
-            const imgSrc = typeof att === 'string' ? att : att.data;
+            const imgSrc = typeof att === 'string' ? att : (att.data || '');
+            const displayName = escapeHtml(att.name || 'Receipt image');
             attachmentHtml = `
               <button 
+                type="button"
                 onclick="viewAttachment('${item.id}')"
-                class="inline-flex items-center gap-2 px-2 py-1 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-medium transition-colors group"
-                title="Click to preview bill"
+                class="inline-flex items-center gap-2 px-2.5 py-1 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-300 border border-emerald-200 rounded-lg text-xs font-medium transition-all shadow-xs group"
+                title="Click to view attached image"
               >
-                <img src="${imgSrc}" class="w-5 h-5 rounded object-cover border border-emerald-200" alt="Bill receipt" />
-                <span class="max-w-[75px] truncate text-[11px] font-semibold">${escapeHtml(att.name || 'Receipt')}</span>
+                <img src="${imgSrc}" class="w-5 h-5 rounded object-cover border border-emerald-200" alt="Receipt" onerror="this.src='https://placehold.co/40x40/e2e8f0/64748b?text=Img'" />
+                <span class="max-w-[80px] truncate text-[11px] font-semibold">${displayName}</span>
               </button>
             `;
           }
@@ -745,28 +786,75 @@
       const entry = expenseList.find(e => String(e.id) === String(id));
       if (!entry || !entry.attachment) return;
 
-      const att = typeof entry.attachment === 'string' && entry.attachment.startsWith('{')
-        ? JSON.parse(entry.attachment)
-        : entry.attachment;
+      let att = entry.attachment;
+      if (typeof att === 'string' && att.startsWith('{')) {
+        try { att = JSON.parse(att); } catch(e) {}
+      }
 
       const isStringUrl = typeof att === 'string';
-      const fileUrl = isStringUrl ? att : att.data;
-      const fileName = (att.name || entry.description || 'Receipt') + (att.type?.includes('pdf') ? '.pdf' : '');
+      const rawData = isStringUrl ? att : (att.data || '');
+      const fileName = (att.name || `${entry.description || 'Receipt'}_bill`).replace(/\s+/g, '_');
+      
       const isPdf = isStringUrl 
-        ? att.includes('.pdf') 
+        ? (att.toLowerCase().includes('.pdf') || att.startsWith('data:application/pdf'))
         : (att.type?.includes('pdf') || att.name?.toLowerCase().endsWith('.pdf'));
 
-      docModalTitle.textContent = `${entry.description} - ${fileName}`;
-      docDownloadBtn.href = fileUrl;
-      docDownloadBtn.download = fileName;
+      // Revoke any previously allocated blob URL to avoid leaks
+      if (activeBlobUrl && activeBlobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(activeBlobUrl);
+      }
+
+      // Convert data-URI to Blob URL for clean native rendering in iframe and new tabs
+      activeBlobUrl = dataUriToBlobUrl(rawData);
+
+      docModalTitle.textContent = entry.description || 'Attached Document';
+      docModalSubtitle.textContent = `${isPdf ? 'PDF Bill Document' : 'Receipt Image'} • ${att.name || (isPdf ? 'receipt.pdf' : 'receipt.jpg')}`;
+      
+      modalHeaderIcon.setAttribute('data-lucide', isPdf ? 'file-text' : 'image');
+      modalHeaderIcon.className = `w-4 h-4 ${isPdf ? 'text-red-600' : 'text-emerald-600'}`;
+
+      docDownloadBtn.href = activeBlobUrl;
+      docDownloadBtn.download = isPdf 
+        ? (fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`) 
+        : (fileName.match(/\.(png|jpe?g|webp)$/i) ? fileName : `${fileName}.jpg`);
+
+      // Open in tab handler
+      docOpenTabBtn.onclick = () => {
+        if (activeBlobUrl) {
+          window.open(activeBlobUrl, '_blank');
+        }
+      };
 
       if (isPdf) {
         docModalContent.innerHTML = `
-          <iframe src="${fileUrl}" class="w-full h-[70vh] rounded-xl border border-slate-200"></iframe>
+          <div class="w-full h-full flex flex-col items-center justify-center">
+            <object 
+              data="${activeBlobUrl}" 
+              type="application/pdf" 
+              class="w-full h-[74vh] rounded-xl border border-slate-200 bg-white shadow-xs"
+            >
+              <div class="p-8 text-center bg-white rounded-xl border border-slate-200 max-w-md mx-auto space-y-3">
+                <i data-lucide="file-text" class="w-12 h-12 mx-auto text-red-500"></i>
+                <p class="text-sm font-semibold text-slate-800">PDF Viewer</p>
+                <p class="text-xs text-slate-500">Your browser does not support inline PDF viewing for this file.</p>
+                <div class="pt-2 flex justify-center gap-2">
+                  <a href="${activeBlobUrl}" target="_blank" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold">
+                    Open PDF in New Tab
+                  </a>
+                </div>
+              </div>
+            </object>
+          </div>
         `;
       } else {
         docModalContent.innerHTML = `
-          <img src="${fileUrl}" alt="Bill Receipt" class="max-w-full max-h-[70vh] rounded-xl object-contain shadow-md" />
+          <div class="w-full flex items-center justify-center p-2">
+            <img 
+              src="${activeBlobUrl}" 
+              alt="Receipt Attachment" 
+              class="max-w-full max-h-[74vh] rounded-xl object-contain shadow-md border border-slate-200 bg-white" 
+            />
+          </div>
         `;
       }
 
@@ -779,6 +867,17 @@
       documentModal.classList.add('hidden');
       documentModal.classList.remove('flex');
       docModalContent.innerHTML = '';
+      if (activeBlobUrl && activeBlobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(activeBlobUrl);
+        activeBlobUrl = null;
+      }
+    });
+
+    // Close modal if user clicks outside modal card
+    documentModal.addEventListener('click', (e) => {
+      if (e.target === documentModal) {
+        closeDocModalBtn.click();
+      }
     });
 
     expenseForm.addEventListener('submit', async (e) => {
