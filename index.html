@@ -193,6 +193,11 @@
         <p class="hint">PDF, JPG, PNG, WebP or GIF, up to 10 MB.</p>
       </div>
 
+      <div class="field">
+        <label for="fDriveLink">Google Drive link to the bill <span class="optional">(optional)</span></label>
+        <input type="text" id="fDriveLink" inputmode="url" placeholder="https://drive.google.com/file/d/…">
+      </div>
+
       <div class="actions">
         <button type="submit" class="btn btn-primary" id="submitBtn">Add expense</button>
         <button type="button" class="btn btn-quiet" id="cancelBtn" hidden>Cancel</button>
@@ -275,17 +280,31 @@
   const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 
+  // Accepts only https links on drive.google.com or docs.google.com; empty is allowed.
+  function parseDriveLink(value) {
+    const v = String(value || '').trim();
+    if (!v) return { ok: true, url: null };
+    try {
+      const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(v) ? v : 'https://' + v);
+      if (u.protocol === 'https:' && (u.hostname === 'drive.google.com' || u.hostname === 'docs.google.com')) {
+        return { ok: true, url: u.href };
+      }
+    } catch (e) { /* invalid link */ }
+    return { ok: false, url: null };
+  }
+
   const ICON = {
     clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     edit: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-    trash: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>'
+    trash: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>',
+    link: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
   };
 
   const els = {
     total: $('total'), caption: $('caption'), bar: $('bar'), legend: $('legend'),
     form: $('expenseForm'), formTitle: $('formTitle'), date: $('fDate'), amount: $('fAmount'),
     desc: $('fDesc'), category: $('fCategory'), paidBy: $('paidBy'), notes: $('fNotes'),
-    file: $('fFile'), billState: $('billState'), dropText: $('dropText'),
+    file: $('fFile'), billState: $('billState'), dropText: $('dropText'), driveLink: $('fDriveLink'),
     submit: $('submitBtn'), cancel: $('cancelBtn'),
     month: $('fMonth'), filterCat: $('fFilterCat'), list: $('list'),
     billDialog: $('billDialog'), billTitle: $('billTitle'), billBody: $('billBody'),
@@ -423,6 +442,7 @@
         ${e.notes ? `<div class="item-notes">${esc(e.notes)}</div>` : ''}
         <div class="item-actions">
           ${e.bill_path ? `<button type="button" class="link-btn" data-action="view" data-id="${esc(e.id)}">${ICON.clip}View bill</button>` : ''}
+          ${e.bill_link ? `<button type="button" class="link-btn" data-action="link" data-id="${esc(e.id)}">${ICON.link}Open Drive link</button>` : ''}
           <button type="button" class="link-btn" data-action="edit" data-id="${esc(e.id)}">${ICON.edit}Edit</button>
           <button type="button" class="link-btn danger" data-action="delete" data-id="${esc(e.id)}">${ICON.trash}Delete</button>
         </div>
@@ -486,6 +506,7 @@
     const radio = els.form.querySelector(`input[name="paid_by"][value="${CSS.escape(e.paid_by)}"]`);
     if (radio) radio.checked = true;
     els.notes.value = e.notes || '';
+    els.driveLink.value = e.bill_link || '';
     updateFormMode();
     renderList(filtered());
     els.form.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
@@ -508,6 +529,8 @@
     if (!fields.description) { toast('Enter a description for this expense.', 'error'); els.desc.focus(); return; }
     if (!fields.category) { toast('Choose a category.', 'error'); els.category.focus(); return; }
     if (!Number.isFinite(fields.amount)) { toast('Enter a valid amount.', 'error'); els.amount.focus(); return; }
+    const link = parseDriveLink(els.driveLink.value);
+    if (!link.ok) { toast('Enter a valid Google Drive link.', 'error'); els.driveLink.focus(); return; }
 
     const existing = currentEntry();
     const editing = !!existing;
@@ -516,7 +539,7 @@
     let newPath = null;
     try {
       if (!api) throw new Error('unavailable');
-      const row = Object.assign({}, fields);
+      const row = Object.assign({}, fields, { bill_link: link.url });
       if (state.file) {
         newPath = await uploadBill(state.file);
         Object.assign(row, { bill_path: newPath, bill_name: state.file.name, bill_type: state.file.type });
@@ -664,6 +687,13 @@
     const id = btn.dataset.id;
     switch (btn.dataset.action) {
       case 'view': viewBill(id); break;
+      case 'link': {
+        const entry = state.entries.find((x) => x.id === id);
+        const parsed = parseDriveLink(entry && entry.bill_link);
+        if (parsed.ok && parsed.url) window.open(parsed.url, '_blank', 'noopener');
+        else toast('This Drive link isn\u2019t valid. Edit the entry to fix it.', 'error');
+        break;
+      }
       case 'edit': startEdit(id); break;
       case 'delete': deleteEntry(id); break;
       case 'retry': loadEntries(); break;
